@@ -9,3 +9,6 @@ analyzer:
     - android/**
     - ios/**
     - macos/**
+    - web/**
+    - windows/**
+    - linux/**
