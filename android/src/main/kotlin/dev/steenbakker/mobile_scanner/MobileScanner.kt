@@ -3,6 +3,7 @@ package dev.steenbakker.mobile_scanner
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.hardware.camera2.CaptureRequest
 import android.media.Image
 import android.net.Uri
 import android.os.Handler
@@ -10,8 +11,11 @@ import android.os.Looper
 import android.util.Log
 import android.util.Size
 import android.view.Surface
+import androidx.annotation.OptIn
 import androidx.annotation.VisibleForTesting
 import androidx.camera.camera2.Camera2Config
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.CameraXConfig
@@ -50,6 +54,7 @@ import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
@@ -479,12 +484,14 @@ class MobileScanner(
 
             // Build the preview to be shown on the Flutter texture
             val previewBuilder = Preview.Builder()
+            applyContinuousAutoFocus(Camera2Interop.Extender(previewBuilder))
             preview = previewBuilder.build().apply { setSurfaceProvider(surfaceProvider) }
 
             // Build the analyzer to be passed on to MLKit
             val analysisBuilder = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setOutputImageFormat(OUTPUT_IMAGE_FORMAT_YUV_420_888)
+            applyContinuousAutoFocus(Camera2Interop.Extender(analysisBuilder))
 
             val cameraResolution =  cameraResolutionWanted ?: Size(1920, 1080)
 
@@ -744,10 +751,24 @@ class MobileScanner(
         val factory: MeteringPointFactory = SurfaceOrientedMeteringPointFactory(1f, 1f)
         val afPoint: MeteringPoint = factory.createPoint(x, y)
 
-        val action = FocusMeteringAction.Builder(afPoint, FocusMeteringAction.FLAG_AF)
+        // Return to continuous AF shortly after a tap so focus keeps tracking
+        // barcodes at different distances.
+        val action = FocusMeteringAction.Builder(
+            afPoint,
+            FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE
+        )
+            .setAutoCancelDuration(2, TimeUnit.SECONDS)
             .build()
 
         cam.cameraControl.startFocusAndMetering(action)
+    }
+
+    @OptIn(markerClass = [ExperimentalCamera2Interop::class])
+    private fun <T> applyContinuousAutoFocus(extender: Camera2Interop.Extender<T>) {
+        extender.setCaptureRequestOption(
+            CaptureRequest.CONTROL_AF_MODE,
+            CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+        )
     }
 
     /**

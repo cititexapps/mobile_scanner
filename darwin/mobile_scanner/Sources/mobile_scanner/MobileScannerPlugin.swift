@@ -528,6 +528,29 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
                 message: error.localizedDescription, details: nil))
             return
         }
+
+#if os(iOS)
+        // Keep focus continuous and biased towards close range, which suits
+        // barcode scanning better than the device defaults.
+        do {
+            try device.lockForConfiguration()
+            if device.isFocusModeSupported(.continuousAutoFocus) {
+                device.focusMode = .continuousAutoFocus
+            }
+            if device.isAutoFocusRangeRestrictionSupported {
+                device.autoFocusRangeRestriction = .near
+            }
+            if device.isSmoothAutoFocusSupported {
+                device.isSmoothAutoFocusEnabled = false
+            }
+            if device.isExposureModeSupported(.continuousAutoExposure) {
+                device.exposureMode = .continuousAutoExposure
+            }
+            device.unlockForConfiguration()
+        } catch {
+            // Focus configuration is best effort; scanning still works without it.
+        }
+#endif
         captureSession!.sessionPreset = AVCaptureSession.Preset.high
 
         let videoOutput = AVCaptureVideoDataOutput()
@@ -778,7 +801,19 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
                     do {
                         try device.lockForConfiguration()
                         device.focusPointOfInterest = focusPoint
-                        device.focusMode = .autoFocus
+                        // Continuous AF honors the point of interest without
+                        // locking focus once it settles (unlike .autoFocus).
+                        if device.isFocusModeSupported(.continuousAutoFocus) {
+                            device.focusMode = .continuousAutoFocus
+                        } else {
+                            device.focusMode = .autoFocus
+                        }
+                        if device.isExposurePointOfInterestSupported {
+                            device.exposurePointOfInterest = focusPoint
+                            if device.isExposureModeSupported(.continuousAutoExposure) {
+                                device.exposureMode = .continuousAutoExposure
+                            }
+                        }
                         device.unlockForConfiguration()
                     } catch {
                         throw MobileScannerError.zoomError(error)

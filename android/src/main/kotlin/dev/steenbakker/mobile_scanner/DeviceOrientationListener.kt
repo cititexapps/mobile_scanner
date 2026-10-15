@@ -61,9 +61,7 @@ class DeviceOrientationListener(
     // the two landscape orientations. The actual orientation is still read
     // from the display rotation in [checkRotation], so the system rotation
     // lock and the app's preferred orientations remain respected.
-    private var orientationEventListener: OrientationEventListener? = null
-
-    private fun createOrientationEventListener() = object : OrientationEventListener(activity) {
+    private val orientationEventListener = object : OrientationEventListener(activity) {
         override fun onOrientationChanged(orientation: Int) {
             if (orientation == ORIENTATION_UNKNOWN) {
                 return
@@ -100,10 +98,8 @@ class DeviceOrientationListener(
         lastSensorQuadrant = -1
         val displayManager = activity.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
         displayManager.registerDisplayListener(displayListener, handler)
-        val sensorListener = orientationEventListener
-            ?: createOrientationEventListener().also { orientationEventListener = it }
-        if (sensorListener.canDetectOrientation()) {
-            sensorListener.enable()
+        if (orientationEventListener.canDetectOrientation()) {
+            orientationEventListener.enable()
         }
         // Emit the orientation on every camera start, so that listeners that
         // survive a stop/start cycle (e.g. when switching cameras) are
@@ -120,7 +116,7 @@ class DeviceOrientationListener(
      * Stop listening to display orientation changes.
      */
     fun stop() {
-        orientationEventListener?.disable()
+        orientationEventListener.disable()
         val displayManager = activity.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
         displayManager.unregisterDisplayListener(displayListener)
         handler.removeCallbacks(rotationCheck)

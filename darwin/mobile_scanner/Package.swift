@@ -12,15 +12,11 @@ let package = Package(
     products: [
         .library(name: "mobile-scanner", targets: ["mobile_scanner"])
     ],
-    dependencies: [
-        .package(name: "FlutterFramework", path: "../FlutterFramework")
-    ],
+    dependencies: [],
     targets: [
         .target(
             name: "mobile_scanner",
-            dependencies: [
-                .product(name: "FlutterFramework", package: "FlutterFramework")
-            ],
+            dependencies: [],
             resources: [
                 .process("Resources"),
             ]
