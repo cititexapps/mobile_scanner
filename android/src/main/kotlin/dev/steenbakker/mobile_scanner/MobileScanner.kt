@@ -3,6 +3,7 @@ package dev.steenbakker.mobile_scanner
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CaptureRequest
 import android.media.Image
 import android.net.Uri
@@ -14,7 +15,10 @@ import android.view.Surface
 import androidx.annotation.OptIn
 import androidx.annotation.VisibleForTesting
 import androidx.camera.camera2.Camera2Config
+import androidx.camera.camera2.interop.Camera2CameraControl
+import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.CaptureRequestOptions
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
@@ -542,6 +546,8 @@ class MobileScanner(
                     it.cameraControl.enableTorch(torch)
                 }
 
+                applyLowLightFrameRate(it)
+
                 if (initialZoom != null) {
                     try {
                         if (initialZoom in 0.0..1.0) {
@@ -769,6 +775,38 @@ class MobileScanner(
             CaptureRequest.CONTROL_AF_MODE,
             CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
         )
+    }
+
+    /**
+     * Let auto exposure lower the frame rate in low light, so the preview does not
+     * turn dark in dim rooms.
+     *
+     * Without an explicit range, many devices run a fixed 30 fps, which caps the
+     * exposure time at ~33ms. This mirrors the CameraView (Camera1) behavior used
+     * previously: pick the widest supported range that still contains 30 (or 24) fps,
+     * e.g. [7, 30] or [15, 30].
+     */
+    @OptIn(markerClass = [ExperimentalCamera2Interop::class])
+    private fun applyLowLightFrameRate(camera: Camera) {
+        try {
+            val ranges = Camera2CameraInfo.from(camera.cameraInfo)
+                .getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+                ?: return
+
+            val range = ranges
+                .sortedByDescending { it.upper - it.lower }
+                .firstOrNull { it.contains(30) || it.contains(24) }
+                ?: return
+
+            Camera2CameraControl.from(camera.cameraControl).setCaptureRequestOptions(
+                CaptureRequestOptions.Builder()
+                    .setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, range)
+                    .build()
+            )
+        } catch (e: Exception) {
+            // Best effort; the device default frame rate is used instead.
+            Log.w("MobileScanner", "Failed to set the AE target fps range", e)
+        }
     }
 
     /**
